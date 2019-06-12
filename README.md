@@ -1,2 +1,2 @@
 # KLuaPuyo
-PuyoPuyo clone for RISC OS, written in RiscLua
+A PuyoPuyo clone for RISC OS, written in RiscLua
