@@ -1,0 +1,30 @@
+#! lua
+-- recurse down directory hierarchy
+local dir,filetype in riscos
+
+recurse = \(this,cond)
+--[[
+Args:
+ this - pathname of a directory.
+ cond -- function of leafname, filetype returning a boolean.
+  If no condition set then action takes place by default.
+Returns:
+  list of pathnames.
+
+Does not recurse into application directories.
+--]]
+ local cmd = { push = \(self,x) self[1+#self] = x end; }
+ local join = "%s.%s"
+ local act = { [0x1000] = \(f,o) f(o) end; [0x2000] = \(f,o) end; }
+ local f
+ f = \(x)
+  local obj,a,ok
+  for leaf,ft in dir(x) do
+    obj, a, ok = join:format(x,leaf), act[ft], not cond or cond(leaf,ft)
+    if a then a(f,obj); =>
+    elseif ok then cmd:push(obj) end -- if
+   end -- for
+  end -- function
+  f(this)
+  => cmd
+ end -- function

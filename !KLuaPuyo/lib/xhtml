@@ -1,0 +1,196 @@
+#!lua
+-- GCW 04/05/2012
+--[[ walk a tree, applying a function at leaves that
+are strings or numbers,
+and raising an error otherwise;
+returns the last leaf or "start" if no error
+and nil followed by error message otherwise.
+Error reports depth and last leaf.
+--]]
+local type = type
+local setmetatable = setmetatable
+local walk = \(tree,f)
+ local errmsg = "Error at depth %d after %q: %s"
+ local used = {} -- avoid infinite loops
+ local recurse
+
+ local action = {
+ ["string"] = \(x,d,last)
+   f(x) -- assume f always returns
+   => x
+   end;
+ ["table"] = \(x,d,last)
+   local ok,err
+   for i = 1,#x do
+      ok,err = recurse(x[i],d+1,last)
+      if not ok then => ok,err
+      else last = ok end -- if
+   end -- for
+   => last
+   end;
+ ["number"] = \(x,d,last)
+     f(x)
+     => last
+   end;
+ ["nil"] = \(x,d,last)
+     f ""
+     => last
+   end;
+ }
+
+ recurse = \(item,depth,last)
+  local g,type_of_item
+  type_of_item = type(item)
+  g = action[type_of_item]
+  if g then
+     => g(item,depth,last)
+   else
+     => nil,errmsg:format(depth,last,"bad type "..type_of_item)
+   end -- if
+  end -- function
+
+  => recurse(tree,-3,"start")
+
+  end -- function
+
+local entity = {
+  ["<"] = "&lt;",
+  [">"] = "&gt;",
+  ["&&"] = "&amp;",
+               }
+local entify = function(c)
+               local n,fmts = c:byte(),"&#%s;"
+               return (n > 127) and fmts:format(n) or c
+               end -- function
+local char in string
+local which = {
+["string"] = \(s) => s:gsub(".",entify) end;
+["number"] = \(s) => char(s) end;
+  }
+
+local out = \(x,filename)
+  local o = io.open(filename,"w")
+  if not o then => nil,"cannot open "..filename end -- if
+  f = \(s)
+    local h = which[type(s)]
+    o:write(h and h(s) or "")
+    end
+  local ok,err = walk(x,f)
+  o:close()
+  => ok,err
+  end -- function
+
+local nontrivial
+nontrivial = \(a)
+   local t = type(a)
+   local w = {
+   ["string"] = \(s) => #s > 0 end;
+   ["number"] = \(s) => true end;
+   ["table"] = \(s)
+               if #s == 0 then return end -- if
+               local k
+               for i = 1,#s do
+                if nontrivial(s[i]) then => true end -- if
+               end -- for
+               =>
+               end;
+    }
+    local f = w[t]
+    => f and f(a)
+    end -- function
+local bra,ket = 0x3c , 0x3e
+local tagmeta = {
+__index = \(t,i) => \(a)
+  local sp = nontrivial(a) and " " or "" 
+  => \(b) => { bra, i, sp, a or "", sp, ket, b, bra, "/", i, ket }
+  end end end;
+  }
+local monotagmeta = {
+__index = \(t,i) => \(a)
+  local sp = nontrivial(a) and " " or ""
+  => { bra, i, sp, a, sp, "/", ket }
+  end end;
+  }
+local TAG = setmetatable({},tagmeta)
+local MONOTAG = setmetatable({},monotagmeta)
+
+local style = \(s) => { [[style="]], s, [["]] } end
+local class = \(s) => { [[class="]], s, [["]] } end
+local id = \(s) => { [[id="]], s, [["]] } end
+
+local doctype = [[
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">]]
+
+local HTML = TAG.html [[
+xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en"]]
+
+local join,nl = "%s%s","\n"
+local this = arg[0]
+local leaf = this:match "[^%.]*$"
+local BEGIN = \(filename) => { FILE = filename or join:format(this,"/html") } end
+
+local meta,link in MONOTAG
+local CSS = [[rel="stylesheet" type="text/css" media="screen" href="]]
+local cmd = "settype %s html"
+
+local END = \(x)
+      local DOCTYPE,TITLE,HEAD,STYLE,FILE in x
+      local sl
+      if STYLE then
+        if type(STYLE) == "table" then
+         sl = { }
+         for i,st in ipairs (STYLE) do
+          sl[1+#sl] = link { CSS, st, '"' }
+         end -- for
+        else
+        sl = link { CSS, STYLE, '"' }
+       end -- if
+      end -- if
+      local x = {
+      DOCTYPE or doctype,nl,
+      HTML { nl,
+       TAG.head "" {
+        TAG.title "" (TITLE or leaf), nl,
+        meta [[name="Generator" content="RiscLua"]], nl,
+        meta [[name="MSSmartTagsPreventParsing" content="TRUE"]],nl,
+        HEAD or "",
+        sl or "",
+        }, nl,
+      TAG.body (x.ATTR or "") (x.BODY or ""), nl,
+      }, } -- x
+      local ok,err = out(x,FILE)
+      if ok then os.execute(cmd:format(FILE))
+      else print(err) end -- if
+ end -- function
+
+--[[
+BEGIN creates a table x with possible fields:
+ FILE                where to save to
+ DOCTYPE
+ TITLE
+ HEAD                extra contents of header
+ STYLE               style filename
+ BODY                contents
+ ATTR                attributes of body
+
+END(x) writes x out to x.FILE
+--]]
+
+local REM = \(s) => { "\n<!-- ", s, " -->\n" } end
+local SPACE = \(n) => ("&nbsp;"):rep(n) end
+local link = \(url) => TAG.a { [[href="]], url, [["]] } end
+
+xhtml = {
+          link = link;
+          REM = REM;
+          SPACE = SPACE;
+          TEXT = TEXT;
+          BEGIN = BEGIN;
+          END = END;
+          TAG = TAG;
+          MONOTAG = MONOTAG;
+          style = style;
+          class = class;
+          id = id;
+         }

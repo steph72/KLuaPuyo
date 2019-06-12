@@ -1,0 +1,71 @@
+
+local sys, dim, $, !, ? in riscos
+
+local painter = {}
+
+function painter:new(spriteFile)
+  local p = {
+    spriteMap = {}
+  }
+  setmetatable(p, {__index = painter})
+  p:setSpriteFile(spriteFile or "Sprites")
+  p.paramBuf = dim(16)
+  return p
+end
+
+-- setup a table containing the sprite names
+function painter:setupSpriteMap()
+  local r
+  local ws
+  local _,_,_,numSprites = sys("OS_SpriteOp",0x108,self.areaPtr)
+  ws = dim(256)
+  for r=1, numSprites do
+    sys("OS_SpriteOp",0x10d,self.areaPtr,ws,32,r)
+    table.insert(self.spriteMap,$[ws])
+  end
+end
+
+function painter:setSpriteFile(theSpriteFile)
+  local r
+  local theSpriteFile = theSpriteFile.."\0"
+  local fType,_,_,_,fLength = sys("OS_File",13,theSpriteFile)
+  if (fType==0) then
+    error("File '"..theSpriteFile.."' not found: ")
+  end
+  if (fType~=1) then
+    error("Wrong object type for file '"..theSpriteFile.."'")
+  end
+  -- alloc and zero memory for sprites
+  self.areaPtr    = dim(fLength)
+  self.areaLength = fLength
+  for r=0, fLength-1 do
+    ?[self.areaPtr+r] = 0
+  end
+  ![self.areaPtr+4] = 16 -- offset to first sprite
+  sys("OS_SpriteOp",9+256,self.areaPtr) -- initialize sprite area
+  sys("OS_SpriteOp",10+256,self.areaPtr,theSpriteFile)
+  self:setupSpriteMap()
+  -- print("Sprites loaded")
+  return self.areaPtr
+end
+
+function painter:plot(spriteName,x,y,action)
+  local x = x or 0
+  local y = y or 0
+  local action = action or 0
+  local spriteName = spriteName.."\0"
+  sys("OS_SpriteOp",34+256,self.areaPtr,spriteName,x,y,action)
+end
+
+function painter:scale(spriteName,x,y,action,mx,my,dx,dy)
+  local spriteName = spriteName.."\0"
+  ![self.paramBuf+0] = mx
+  ![self.paramBuf+4] = my
+  ![self.paramBuf+8] = dx
+  ![self.paramBuf+12] = dy
+  sys ("OS_SpriteOp",52+256,self.areaPtr,spriteName,x,y,action,self.paramBuf,0)
+end
+
+
+
+return painter

@@ -1,0 +1,7 @@
+Set KLuaPuyo$Dir <Obey$Dir>
+Set KLuaPuyo$path <KLuaPuyo$Dir>.
+Set bundledLua$Path <KLuaPuyo$Dir>.lib.
+Set OLD_LUA_PATH <LUA_PATH>
+Set LUA_PATH bundledLua:?;?
+<KLuaPuyo$Dir>.bin.lua570 <KLuaPuyo$Dir>.KLuaPuyo
+Set LUA_PATH <OLD_LUA_PATH>

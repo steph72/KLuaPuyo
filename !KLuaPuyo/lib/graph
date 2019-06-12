@@ -1,0 +1,40 @@
+#! lua 5.1
+-- G.C.W  18/11/06
+
+--[[
+component of start node in graph as a list of sets of nodes
+--]]
+
+local insert = table.insert
+local pairs = pairs
+
+graph = {
+
+component = function(mygraph,start)
+        local vertex,edge = {},mygraph.edge
+        for node,val in pairs(mygraph.vertex) do
+          vertex[node] = val
+        end -- for
+        local strata  = {{ [start] = true }}
+        vertex[start] = nil
+        local more = function()
+            local new,change = {},nil
+            for x,_ in pairs(strata[#strata]) do
+             for y,_ in pairs(vertex) do
+               if edge(x,y) then -- x cannot equal y
+                  change = true
+                  new[y] = true
+               end -- if
+             end -- for
+            end -- for
+            if change then
+              insert(strata,new)
+              for x,_ in pairs(new) do vertex[x] = nil end -- for
+            end -- if
+            return change
+            end -- function
+        repeat until not more() -- add new vertices while possible
+        return strata
+        end -- function
+
+         }

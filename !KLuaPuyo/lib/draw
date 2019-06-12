@@ -1,0 +1,255 @@
+#! lua
+--[[
+A drawfile is a table with keys
+'bb' - bounding box, table of 4 integers,
+'opt' - options, table of 16 integers,
+integers - objects.
+Each object is a table with keys
+'type' - integer,  -- exclude type 11 --
+'data' - table of objectdata
+Each objectdata is a table with keys depending on the type.
+
+For path objects (type 2)
+'bb' -  bounding box, table of 4 integers,
+'fill' - fill colour - integer,
+'outline' - outline colour - integer,
+'thickness' - outline thickness - integer,
+'style' - style - integer,
+'dash' - optional dash pattern - list of integers,
+integers - path components.
+
+For text objects (type 1)
+'bb' -  bounding box, table of 4 integers,
+'colour' - integer,
+'bghint' - integer,
+'font' - integer,
+'fontx' - integer,
+'fonty' - integer,
+'x' - integer,
+'y' - integer,
+'s' - string.
+--]]
+
+-- creating the draw file
+local bb_default = { 0, 0, 0x8C000, 0x48000, }
+local w, c = io.write, string.char
+local q = \(x)
+          local C = 256
+          if type(x) == "userdata" then
+            x = bc.tonumber(x)
+          end
+          if type(x) == "number" then
+              w(c(x%C),c((x>>8)%C),c((x>>16)%C),c((x>>24)%C) )
+          else
+           w(x)
+          end -- if
+          end -- function
+
+local mkbbox = \(bb)
+ q (bb[1])
+ q (bb[2])
+ q (bb[3])
+ q (bb[4])
+ end -- function
+
+local pad = \(s,n)
+    local m,blank = #s," "
+    if m < n then => s..blank:rep(n-m)
+    else => s:sub(1,n)
+    end -- if
+    end -- function
+
+local mkheader = \(bb)
+ q "Draw"
+ q (0xc9)
+ q (0)
+ q (pad("RiscLua",12))
+ mkbbox(bb or bb_default)
+ end -- function
+
+local mkobjhead = \(objtype,size,bb)
+ q (objtype)
+ q (size)
+ mkbbox(bb or bb_default)
+ end -- function
+
+local mkpathobjdata = \(pathd)
+ q (pathd.fill)
+ q (pathd.outline)
+ q (pathd.thickness)
+ local style,dash in pathd
+ q (style)
+ if style & 128 == 128 and dash then
+  q (dash.offset)
+  q (#dash)
+  for _,x in ipairs(dash) do
+   q (x)
+  end -- for
+ end -- if
+ for _,x in ipairs(pathd) do
+    q (x)
+  end -- for
+ end -- function
+
+local findpathsize = \(path)
+ local style,dash in path
+ local m = dash and ((style & 128 == 128) and #dash) or 0
+ local n = #path
+ =>  4*(10 + m + n) -- includes header size
+ end -- function
+
+local mkpathobj = \(pathd)
+  mkobjhead(2,findpathsize(pathd),pathd.bb)
+  mkpathobjdata(pathd)
+  end -- function
+
+local defaultopt = {
+0x500, 0x111, 0x3ff00000,0,
+4,0,1,0,
+0,0,1,1,
+0,1,1,0x1388,
+                }
+
+local mkoptobj = \(opt)
+  mkobjhead(11,0x58,{0,0,0,0})
+  for _,x in ipairs(opt or defaultopt) do
+   q (x)
+  end -- for
+  end -- function
+
+local findsize = \(x)
+    local n = 0
+    for _,y in ipairs(x) do
+      n = n + 2 + #y
+    end -- for
+    => n
+    end -- function
+
+local morebyte = { [0] = 0; [1] = 3; [2] = 2; [3] = 1; }
+
+local mkfontobj = \(list)
+    local nul = '\0'
+    q (0)
+    local n = findsize(list)
+    local m = morebyte[n%4]
+    q (8 + n + m)
+    for i,fontname in ipairs(list) do
+     w(c(i),fontname,nul)
+    end -- for
+    if m > 0 then w(nul:rep(m)) end -- if
+    end -- function
+
+local findtextsize = \(textd)
+      local s in textd
+      local n = 1 + #(s)
+       => 52 + n + morebyte[n%4]  -- includes header size
+      end -- function
+
+local mktextdata = \(textd)
+      local nul = '\0'
+      local colour,bghint,font,fontx,fonty,x,y,s in textd
+      local n = 1 + #s
+      local m = morebyte[n%4]
+      q (colour)
+      q(bghint)
+      q(font)
+      q(fontx)
+      q(fonty)
+      q(x)
+      q(y)
+      w(s,nul)
+      if m > 0 then w(nul:rep(m)) end -- if
+      end -- function
+
+local mktextobj = \(textd)
+      mkobjhead(1,findtextsize(textd),textd.bb)
+      mktextdata(textd)
+      end -- function
+
+local mktab = {
+  [1] = mktextobj;
+  [2] = mkpathobj;
+              }
+
+local mkfile = \(drawf)
+       mkheader(drawf.bb)
+       fontlist = drawf.font
+       if fontlist then mkfontobj(fontlist) end -- if
+       mkoptobj(drawf.opt)
+       for _,obj in ipairs(drawf) do
+         local mk = mktab[obj.type]
+         if mk then mk(obj.data) end -- if
+       end -- for
+       end -- function
+
+local save = \(drawf,file,run)
+       file = file or os.getenv "Wimp$Scrap"
+       io.output(file)
+       mkfile(drawf)
+       io.output()
+       os.execute("settype "..file.." aff")
+       if run then os.execute("filer_run "..file) end -- if
+       end -- function
+
+-- words to use
+local PATH = {
+  END = \(self) self[1 + #self] = 0 end;
+  CLOSE = \(self) self[1 + #self] = 5 end;
+  MOVE = \(self,x,y)
+         self[1 + #self] = 2
+         self[1 + #self] = x
+         self[1 + #self] = y
+         end;
+  DRAW = \(self,x,y)
+         self[1 + #self] = 8
+         self[1 + #self] = x
+         self[1 + #self] = y
+         end;
+  BEZIER = \(self,x1,y1,x2,y2,x3,y3)
+         self[1 + #self] = 6
+         self[1 + #self] = x1
+         self[1 + #self] = y1
+         self[1 + #self] = x2
+         self[1 + #self] = y2
+         self[1 + #self] = x3
+         self[1 + #self] = y3
+         end;
+                  }
+
+local path = \(self,x)
+       local pathobj = { type = 2; data = x; }
+       self[1 + #self] = pathobj
+       x.fill = x.fill or -1
+       x.outline = x.outline or 0
+       x.thickness = x.thickness or 0
+       x.style = x.style or 0x20100042
+       => setmetatable(x,{ __index = PATH; })
+       end -- function
+
+local text = \(self,d)
+             local textobj = { type = 1; data = d; }
+             self[1 + #self] = textobj
+             d.colour = (d.colour) or 0
+             d.bghint = (d.bghint) or 0xffffff00
+             d.font = (d.font) or 0
+             d.fontx = (d.fontx) or 0x1000
+             d.fonty = (d.fonty) or 0x2000
+             => \(x,y)
+                d.x = x
+                d.y = y
+                => \(s) d.s = s end end end
+
+local common = {
+ save = save;
+ path = path;
+ text = text;
+               }
+
+local rgb = \(p,q,r) => (p and q and r and
+            ((p<<8) | (q<<16) | (r<<24))) or -1 end
+
+draw = {
+create = \() => setmetatable({},{ __index = common; }) end;
+rgb = rgb;
+PATH = PATH;
+       }

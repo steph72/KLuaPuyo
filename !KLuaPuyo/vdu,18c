@@ -1,0 +1,107 @@
+#!lua
+-- vdu
+-- JMT 08/02/2001
+-- GCW 23/08/2002
+
+-- Library of functions for BBC screen graphics.
+
+-- References :
+--   1) BBC Basic Reference Manual pages 123-132  (PLOT \)
+--   2) BBC Basic Reference Manual pages 173-184  (VDU \)
+
+riscos = require("riscos")
+local sys in riscos
+
+vdu = \(t)    -- takes numbers, strings, tables
+local pack in table
+local f
+local act = {
+number = \(x) sys(0,x & 0xff) end,
+string = \(x)
+  local c
+  local y,n = pack(x:byte(1,#x))
+  for i = 1,n do
+    c = y[i]
+    if c > 31 and c ~= 127 then sys(0,y[i]) end -- if
+  end -- for
+ end,
+table = \(x) for _,y in ipairs(x) do f(y) end end,
+}
+f = \(x)
+local ty = type(x)
+local g = act[ty]
+if g then g(x) end -- if
+end -- function
+=> f(t)
+end -- function
+
+colour = \(x) vdu { 17,x } end
+gcol   = \(k,x) vdu { 18,k,x } end
+tint = \(k,x) vdu { 23,17,k,x } end
+nl = { 10,13 }
+origin = \(x,y) vdu {29,x%256,x/256,y%256,y/256} end
+cls = \() vdu(16)
+ end
+---------------------------- Plotting functions  ------------------
+-- points are pairs
+
+plot = \(action) => \(x)
+sys(0x45,action,x[1],x[2]) -- "OS_Plot"
+end end
+
+move,draw,point  = plot(4),plot(5),plot(69)
+moveby,drawby,pointby = plot(0),plot(1),plot(61)
+
+line = \(...)
+ local x = (select(1,...))
+ move(x)
+ for i = 2,select('#',...) do
+   x = (select(i,...))
+   draw(x)
+  end -- for
+end
+
+polygon = \(...)
+ line(...)
+ local x = (select(1,...))
+ draw(x)
+end
+
+trianglefill = \(x,y,z)
+ move(x)
+ move(y)
+ plot(85)(z)
+end
+
+rectangle = \(x,width,height)
+ move(x)
+ drawby{width,0}
+ drawby{0,height}
+ drawby{-width,0}
+ drawby{0,-height}
+ end
+
+rectanglefill = \(x,width,height)
+ move(x)
+ plot(97){width,height}
+ end
+
+circle  = \(x,r)
+ move(x)
+ plot(145){r,0}
+end
+
+circlefill = \(x,r)
+ move(x)
+ plot(153){r,0}
+end
+
+ellipsefill = \(a,maj,min)
+move(a)
+move{a[1]+maj,0}
+plot(205){a[1],a[2]+min}
+end
+
+
+
+

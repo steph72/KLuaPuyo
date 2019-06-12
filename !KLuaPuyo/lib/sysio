@@ -1,0 +1,23 @@
+#! lua
+-- function returning string contents of file in fpath
+=> {
+bload = \ (fpath)
+  local sys, dim, $, block in riscos
+  local r0,r1,r2,r3,r4 = sys (8, 17, fpath)
+  if r0 ~= 1 then => nil,fpath.." not a file" end -- if
+  local b = dim (r4)
+  sys (8, 16, fpath, b, 0) -- load file into b
+  local s = $ (b, r4)    -- read contents as a string
+  block[b] = nil -- b is now garbage
+  => s
+end,
+-- function to save a string as a file of type ftype in fpath
+-- returns nil, errmsg if save fails
+bsave = \ (s, fpath, ftype)
+   local sys, dim, $, block in riscos
+   local b = dim (s) -- store string
+   local r0,r1 = sys (8, 10, fpath, ftype, 0, b, b + #s)
+   block[b] = nil -- b is now garbage
+   => r0,r1
+end,
+}

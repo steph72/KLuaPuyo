@@ -1,0 +1,18 @@
+#! lua
+-- icon
+-- GCW 24/04/2009
+
+local sys,!,$ in riscos
+
+icon = {
+
+set = \(window,icon,s,valid,eor,clear,buf)
+   ![buf]=window;![buf+4]=icon;sys(0x400ce,0,buf) -- Wimp_GetIconState
+   ![buf+8]=eor;![buf+12]=clear;
+   if s then
+     $[![buf+28] ] = s.."\0"
+     $[![buf+32] ] = valid or ""
+   end -- if
+   sys(0x400cd,0,buf) end; -- function  Wimp_SetIconState
+
+        }

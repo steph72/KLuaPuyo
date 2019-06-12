@@ -1,0 +1,29 @@
+#! lua
+-- events library for RiscLua
+
+-- GCW 20/2/2000
+-- Wimp Reason codes for Lua
+
+
+ Null_Reason_Code = 0;
+ Redraw_Window_Request = 1;
+ Open_Window_Request = 2;
+ Close_Window_Request = 3;
+ Pointer_Leaving_Window = 4;
+ Pointer_Entering_Window = 5;
+ Mouse_Click = 6;
+ User_Drag_Box = 7;
+ Key_Pressed = 8;
+ Menu_Selection = 9;
+ Scroll_Request = 10;
+ Lose_Caret = 11;
+ Gain_Caret = 12;
+ Poll_Word_Nonzero = 13;
+
+ User_Message = 17;
+ User_Message_Recorded = 18;
+ User_Message_Acknowledge = 19;
+
+ Toolbox = 512;
+
+

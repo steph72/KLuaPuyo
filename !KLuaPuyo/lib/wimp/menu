@@ -1,0 +1,37 @@
+#! lua
+
+require "string.pad"
+local dim,!,$ in riscos
+local pad,ipairs = pad,ipairs
+
+
+local build = \(p,x,last)
+       local mflags,ptr,iflags,name in x
+       ![p] = (last and 0x80 or 0)|(mflags or 0)
+       ![p+4] = ptr or -1
+       ![p+8] = iflags or 0x7019011
+       $[p+12] = pad(name,12,0)
+       end
+
+menu = {
+new = \ (m)
+     local size = 28+24*#m
+     local b = dim(size)
+     local title,colours,width,height,gap in m
+     $[b] = pad(title,12,0)
+     ![b+12] = colours or 0x70207
+     ![b+16] = width or 100
+     ![b+20] = height or 44
+     ![b+24] = gap or 0
+     for i,item in ipairs(m) do
+       build(b+4+24*i,item,i == #m)
+     end -- for
+     => b
+     end; -- function
+     }
+--[[
+Argument to menu.new should be a table with keys 1,2, ...
+for menu items and title,colours,width,height,gap.
+Each item should be a table with keys mflags,ptr,iflags,name.
+It returns a pointer to the menu block.
+--]]

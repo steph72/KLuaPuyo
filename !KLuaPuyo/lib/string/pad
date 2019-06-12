@@ -1,0 +1,20 @@
+#!lua
+-- pad
+-- GCW 16/08/04
+
+
+--  pad strings - used chiefly for templates, icons etc
+--  pad (s,n,c) - pad s out to length n with trailing
+--  characters with ASCII code c.
+
+pad = function (s,n,c)
+  local l = #s
+  if (l > n) then
+     return s:sub(1,n)
+  else
+     return s .. ((string.char(c)):rep(n-l))
+  end -- if
+end -- function
+
+
+

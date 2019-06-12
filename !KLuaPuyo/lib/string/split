@@ -1,0 +1,22 @@
+-- some useful things
+
+-- use as: for i,field in split(text,pat) do ... end
+split = function (t,p)
+        local pat,n,count,L,x = "(.-)"..p, 1,0,#t
+        local f = function (s,v)
+                  local i,j = s:find(pat,n)
+                  if i then
+                    x = s:match(pat,n)
+                    count = count + 1
+                    n = j + 1
+                  elseif n < L then
+                    count = count + 1
+                    x = s:sub(n,-1)
+                    n = L + 1
+                  else
+                   count = nil
+                  end -- if
+                  return count,x
+                  end -- function
+        return f,t,n
+        end -- function

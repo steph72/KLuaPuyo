@@ -1,0 +1,40 @@
+#! lua
+-- window
+-- GCW 06/12/2008
+
+local sys,! in riscos
+
+
+local !! = \(n) => \(b) => sys(n,0,b) end end
+local !!1 = \(n) => \(b) =>(sys(n,0,b)) end end
+
+
+local create = !!1(0x400c1);
+local delete = !!(0x400c3);
+local open = !!(0x400c5);
+local close = !!(0x400c6);
+local redraw = !!(0x400c8);
+local update = !!1(0x400c9);
+local rectangle = !!1(0x400ca);
+local getstate = !!(0x400cb);
+local getinfo = !!(0x400cc);
+local place = \(w, b, size)
+  ![b] = w; getstate (b) -- Wimp_GetWindowState
+  local ww,wh = ![b+12] - ![b+4],![b+16] - ![b+8]
+  local sw,sh = size ( )
+  ![b+4],![b+8] = (sw-ww)/2,(sh-wh)/2
+  ![b+12],![b+16] = ![b+4] + ww,![b+8] + wh
+  ![b+28] = -1;open(b);end; -- function Wimp_OpenWindow
+
+window = {
+   create = create;
+   delete = delete;
+   open = open;
+   close = close;
+   redraw = redraw;
+   update = update;
+   rectangle = rectangle;
+   getstate = getstate;
+   getinfo = getinfo;
+   place = place;
+     }

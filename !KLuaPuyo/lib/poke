@@ -1,0 +1,24 @@
+#! lua
+local !,?,$ in riscos
+
+getmetatable(!).__call = \(_,x) =>
+         \(y) ![y] = x; => y + 4 end end
+getmetatable(?).__call = \(_,x) =>
+         \(y) ?[y] = x; => y + 1 end end
+getmetatable($).__call = \(_,x) local n = #x; =>
+          \(y) $[y] = x; => y + n end end
+
+poke = \(list)
+   local action = {
+    ["function"] = \(v) => \(x) => v(x) end end;
+    ["table"] = poke;
+    }
+    => \(x)
+        for _,v in ipairs(list) do
+           local t = type(v)
+           local f = action[t]
+           x = f(v) (x)
+         end -- for
+         => x
+     end
+ end

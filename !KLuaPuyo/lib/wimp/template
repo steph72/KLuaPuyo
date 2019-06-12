@@ -1,0 +1,45 @@
+#! lua
+-- template
+-- GCW 24/04/2009
+
+local sys,dim,$ in riscos
+local ipairs = ipairs
+require "string.pad"
+local pad = pad
+
+template = {
+read = \(tfile,winlist)
+  local name,o,q = dim(12),{},{}
+  sys(0x400d9,0,tfile) -- Wimp_OpenTemplate
+  local r0,r1,r2,r3,r4,r5,r6,indir,len
+  local x = 0
+  local y = dim(x)
+  for _,win in ipairs(winlist) do
+    $[name] = pad(win,12,0)
+    r0,r1,r2,r3,r4,r5,r6 = sys(0x400db,0,0,y,y,-1,name,0)
+    if (not r0) or (r6 == 0) then
+      sys(0x400da) -- Wimp_CloseTemplate
+      => nil,win
+    end -- if
+    if x < r1 then x = r1 end -- if
+    q[win] = r2
+   end -- for
+   local buf = dim(x)
+   for _,win in ipairs(winlist) do
+    $[name] = pad(win,12,0)
+    len = q[win]
+    indir = dim(len)
+    sys(0x400db,0,buf,indir,indir+len,-1,name,0) -- Wimp_LoadTemplate
+    o[win] = sys(0x400c1,0,buf) -- function Wimp_CreateWindow
+   end -- for
+   sys (0x400da) -- Wimp_CloseTemplate
+   => o
+  end;
+   }
+--[[
+First argument is a pointer to a buffer holding the template file's
+pathname. The second argument is a list of window names (less than
+12 characters) in the template file.
+The result is either nil followed by the name of a window not found
+or else a table, indexed by window names, of handles.
+--]]

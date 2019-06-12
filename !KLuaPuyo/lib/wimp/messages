@@ -1,0 +1,61 @@
+#! lua
+-- messages library for RiscLua
+-- GCW 20/2/2000
+
+
+
+Quit  =  0;
+DataSave =   1;
+DataSaveAck  =  2;
+DataLoad =   3;
+DataLoadAck =   4;
+DataOpen  =  5;
+RAMFetch =   6;
+RAMTransmit =   7;
+PreQuit =   8;
+Palette_Change =   9;
+SaveDeskTop  =  10;
+DeviceClaim  =  11;
+DeviceInUse =   12;
+DataSaved =   13;
+ShutDown  =  14;
+
+FilerOpenDir = 1024;
+FilerCloseDir = 1025;
+FilerOpenDirAt = 1026;
+FilerSelectionDirectory = 1027;
+FilerAddSelection = 1028;
+FilerAction = 1029;
+FilerControlAction = 1030;
+FilerSelection = 1031;
+
+AlarmSet = 1280;
+AlarmGoneOff = 1281;
+HelpRequest = 1282;
+HelpReply = 1283;
+
+Notify = 262208;
+
+MenuWarning = 262336;
+ModeChange = 262337;
+TaskInitialise = 262338;
+TaskCloseDown = 262339;
+SlotSize = 262340;
+SetSlot = 262341;
+TaskNameRq = 262342;
+TaskNameIs = 262343;
+TaskStarted = 262344;
+MenusDeleted = 262345;
+Iconize = 262346;
+WindowClosed = 262347;
+WindowInfo = 262348;
+
+TaskWindow_Input = 526528;
+TaskWindow_Output = 526529;
+TaskWindow_Ego = 526530;
+TaskWindow_Morior = 526531;
+TaskWindow_Morere = 526532;
+TaskWindow_NewTask = 526533;
+TaskWindow_Suspend = 526534;
+TaskWindow_Resume = 526535;
+

@@ -1,0 +1,13 @@
+-- read string at an address, terminated by a control character
+
+readstr = \ (x)
+          local ? in riscos
+          local char in string
+          local c,o = ?[x],{}
+          while c > 31 do
+            o[1+#o] = char(c)
+            x = x + 1
+            c = ?[x]
+          end -- while
+          => table.concat(o)
+          end

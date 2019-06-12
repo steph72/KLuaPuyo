@@ -1,0 +1,11 @@
+#! lua
+-- screen
+-- GCW 24/04/2009
+
+local sys in riscos
+local var = \ (x)
+     local r0,r1,r2 = sys (0x35, -1, x) -- OS_ReadModeVariable
+     => r2 end -- function
+local size = \ ( ) -- screensize in pixels
+       => var(11) << var(4), var(12) << var(5) end -- function
+screen = { size = size; }

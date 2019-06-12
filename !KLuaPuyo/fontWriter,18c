@@ -1,0 +1,139 @@
+local sys, dim, $, !, ? in riscos
+
+local SKWriter = {}
+
+function SKWriter:new(_fontName, _fontSize, _fontForeground, _fontBackground)
+  local w = {
+    fontName       = _fontName       or "Trinity.Medium",
+    fontSize       = _fontSize       or 12,
+    fontForeground = _fontForeground or 0xffffff00,
+    fontBackground = _fontBackground or 0x00000000,
+    fontHandle     = -1001,
+    cursorX        = 0,
+    cursorY        = 0,
+    coords         = dim(68),
+    textbuf        = dim(1024),
+    screenWidth    = 1280,        -- TODO:
+    screenHeight   = 960,         -- get these per SWI
+    lineSpacing    = 10,
+    isHomed        = false,
+    newlinePending = false
+  }
+  setmetatable(w, {__index = SKWriter})
+  w:setFont(w.fontName,w.fontSize)
+  if (w.fontHandle==-1001) then
+    print("?could not init writer: font "..w.fontName.." not found")
+    return nil
+  end
+  w:home()
+  return w
+end
+
+function SKWriter:home()
+  self:gotoxy(0,0)
+end
+
+
+function SKWriter:setFont(fname, fsize)
+  if (self.fontHandle ~= -1001) then
+    sys("Font_LoseFont",self.fontHandle)
+  end
+  $[self.textbuf] = fname.."\0"
+  local h = sys("Font_FindFont",0,self.textbuf,fsize*32,fsize*32,0,0)
+  self.fontHandle = h or -1001
+  -- print ("got font handle "..self.fontHandle)
+end
+
+function SKWriter:gotoxy(x,y)
+  self.newlinePending = false
+  self.cursorX, self.cursorY = x,y
+  if (x==0 and y==0) then
+    self.isHomed=true
+  else
+    self.isHomed=false
+  end
+end
+
+function SKWriter:sizeForString(theString)
+  local xsize,ysize,foo
+  $[self.textbuf] = theString.."\0"             -- copy string into buffer
+  for i=0,63 do; ?[self.coords+i] = 0; end      -- empty coords array
+  sys("Font_ScanString",self.fontHandle,self.textbuf,0x40320,-1,-1,self.coords)
+  foo,xsize,ysize = sys("Font_ConverttoOS",0,
+                        ![self.coords+28] - ![self.coords+20],
+                        ![self.coords+32] - ![self.coords+24])
+  return xsize,ysize
+end
+
+function SKWriter:sizeOfFont()
+  local _,x0,y0,x1,y1 = sys("Font_ReadInfo",self.fontHandle)
+  return x1-x0,y1-y0
+end
+
+function SKWriter:setForegroundColour(col)
+  self.fontForeground = col
+end
+
+
+function SKWriter:write(theString,newlineFlag)
+
+  local sWidth, sHeight = self:sizeForString(theString)
+  local fWidth, fHeight = self:sizeOfFont()
+
+  if (self.newlinePending==true) then
+    self.cursorY = self.cursorY - sHeight - self.lineSpacing
+  end
+
+  if (self.isHomed==true) then
+    self.isHomed=false
+    self.cursorY = self.screenHeight - sHeight
+  end
+
+  local x0, y0 = self.cursorX, self.cursorY
+
+  sys("ColourTrans_SetFontColours",self.fontHandle,
+                                   self.fontBackground,
+                                   self.fontForeground,14)
+
+  sys("Font_Paint",self.fontHandle,self.textbuf,784,x0,y0)
+
+  if (newlineFlag==true) then
+    self.newlinePending = true
+    self.cursorX = 0
+  else
+    self.cursorX = self.cursorX + sWidth
+  end
+  if (self.cursorY<0) then self.cursorY=0; end;
+end
+
+function SKWriter:writeln(theString)
+  theString = theString or ""
+  self:write(theString,true)
+end
+
+function SKWriter:center(theString)
+  local width,height = self:sizeForString(theString)
+  self.cursorX = (self.screenWidth/2)-width/2
+  self:write(theString,true)
+end
+
+function SKWriter:endWriter()
+  -- print ("losing font handle "..self.fontHandle)
+  sys("Font_LoseFont",self.fontHandle)
+end
+
+
+--
+-- vdu {22,28}
+-- myWriter = SKWriter:new("Homerton.Medium",10,0x33ee0000)
+-- myWriter:gotoxy(0,700)
+-- myWriter:writeln("Hello World!")
+-- myWriter:writeln("Where are you?")
+-- myWriter:setForegroundColour(0xff880000)
+-- myWriter:write("1 2 3 4 5")
+-- myWriter:write(" 6 7 8 9 10")
+-- myWriter:endWriter()
+--
+-- end
+
+return SKWriter

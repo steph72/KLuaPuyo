@@ -1,0 +1,91 @@
+#! lua
+
+local dim, sys, !, $  in riscos
+local ipairs = ipairs
+
+local task = \ (title, idle)
+      local TASK, title$ = 0x4b534154, title.."\0"
+      local poll = idle and 0x400e1 or 0x400c7
+      ----- init ---------------------------------[
+      local init = \ (self)
+        local r0, r1 = sys (0x400c0, self.version or 310,
+           TASK, title$, self.mesgs or 0)
+        self.handle = r1 end -- init
+      ---------------------------------------------]
+      ------ run ---------------------------------[
+      local run = \ (self)
+        local b, handler, preclosedown in self
+        local reason, quit, action, err
+        :: continue ::
+        reason, err = sys (poll, self.mask or 0, b, self.time)
+        if not reason then reason = "sys_error"  end -- if
+        action = handler[reason]
+        if not action then goto continue end -- if
+        quit, err = action (self)
+        if not (quit or err) then goto continue end -- if
+        if err then
+          action = handler.error or report
+          self:action (err)
+        end -- if
+        if preclosedown then self:preclosedown ( ) end -- if
+        sys (0x400dd, self.handle, TASK)
+       end -- run
+      ---------------------------------------------------]
+      -------- report ----------------------------------[
+       local report = \ (self, s, flag)
+         local b in self
+         $[b] = ("Lua_%s\0"):format (s)
+         local r0, r1 = sys (0x400df, b, flag or 17, title$)
+         => r1 -- 0 no click, 1 OK, 2 Cancel
+       end -- report
+      ----------------------------------------------------]
+
+      do -------- returned task ------------------------[
+
+       local respond = \ (self)
+         local b, handler in self
+         local mesg in handler
+         local action = mesg[![b + 16] ]
+         if action then => action (self) end -- if
+         end
+
+       local sys_error = \ (self)
+        => true, ("bad sys call 0x%x"):format (poll)
+        end
+
+       => { init = init, run = run,
+       title = title, report = report,
+       handler = {  -------------------------------[
+           [17] = respond, [18] = respond,
+           sys_error = sys_error,
+           mesg = { [0] = \ (self) => true end, }
+       }, ------------------------------------------]  handlers
+       }
+    ----------------------------------------------------] task
+    end -- do
+  end -- function
+
+    -------- ack ------------------------------------[
+      local ack = \ (self, react)
+       local b in self
+       local x, y, fn, ft = ![b + 28], ![b + 32], $[b + 44], ![b + 40]
+       ![b + 12], ![b + 16] = ![b + 8], 4   -- DataLoadAck
+       sys (0x400e7, 19, b, 0)
+       if react then => react (x, y, fn, ft) end -- if
+      end -- ack
+    -------------------------------------------------]
+
+    -------- msglist ---------------------------------[
+    local msglist = \(t)
+      if not t then => 0 end -- if -- no messages important
+      local x = dim(4+((#t)<<2))
+      for i,y in ipairs(t) do
+       ![x-4+((i)<<2)] = y
+      end -- for
+      ![x+((#t)<<2)] = 0
+      => x
+    end -- function
+  -----------------------------------------------------]
+
+=> { task = task, ack = ack, msglist = msglist, }
+

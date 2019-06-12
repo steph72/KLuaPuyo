@@ -1,0 +1,42 @@
+#!  lua
+-- toolbox
+-- GCW 19/03/2013
+
+local task, ack, msglist in (require "wimp.task")
+local sys, dim, ! in riscos
+
+local tbox = \ (title)
+    local this = task (title)
+    do
+    local _ENV = this
+      handler.tbox = {
+       [0x82a91] = \ (self) => true end, -- Toolbox_mesg_quitquit
+       [0x44ec0] = handler.error or report, -- Toolbox_mesg_error
+       }
+      handler[512] = \ (self)
+        local b in self
+        local tbox_event = ![b + 8]
+        local action = handler.tbox[tbox_event]
+        if action then => action (self) end -- if
+        end -- function
+      id = dim (24) -- id block
+      msgf = dim (16)
+     ----------------- init -------------------------[
+     init = \ (self) -- override task init
+      local r0, r1, r2 = sys (0x44ecf, -- Toolbox_Initialise
+      self.flags or 0, self.version or 310, self.mesgs or 0,
+      self.tbox_events or 0, appdir, self.msgf,self.id)
+      if r0 then
+       self.currentversion = r0
+       self.handle = r1
+       self.sprite_area = r2
+       => self
+      end -- if
+      => r0, r1
+     end -- init
+     ----------------------------------------------]
+    end -- do
+    => this
+    end -- function
+
+=> { task = task, ack = ack, msglist = msglist, tbox = tbox, }

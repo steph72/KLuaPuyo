@@ -1,0 +1,736 @@
+--[[
+
+  KLuaPuyo v1.0
+  written by Stephan Kleinert
+
+  Copyright (c) 2015 Stephan Kleinert
+
+  Permission is hereby granted, free of charge, to any person
+  obtaining a copy of this software and associated documentation
+  files (the "Software"), to deal in the Software without
+  restriction, including without limitation the rights to use, copy,
+  modify, merge, publish, distribute, sublicense, and/or sell copies
+  of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be
+  included in all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+  BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+  ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+--]]
+
+
+require "KLuaPuyo:hio"
+require "KLuaPuyo:strict"
+
+local sys in riscos
+local spritePainter = require("KLuaPuyo:spritePainter")
+local SKWriter = require("KLuaPuyo:fontWriter")
+
+local osbyte = 6
+
+
+-- game configuration constants
+
+kCanvasWidth   = 6      -- number of columns
+kCanvasHeight  = 16     -- number of rows
+kXOffset1      = 12     -- x offset for drawing left player
+kXOffset2      = 3      -- x offset for right player
+kYOffset       = 8      -- y offset for drawing
+kCriticalTiles = 4      -- how many tiles do we need?
+kScanRate      = 16     -- # of ticks between keypress cans
+kSlowDown      = 28
+kFastDown      = 6
+kSlowCollapse  = 10
+kFastCollapse  = 2
+kNumColors     = 5
+
+kXOffset = {}
+kXOffset[1] = kXOffset1
+kXOffset[2] = kXOffset1 + kCanvasWidth + kXOffset2
+
+
+-- state machine constants
+
+kStateNewTile         =  10     -- new tile
+kStateTilePlayerMove  =  20     -- tile left/right
+kStateTileDown        =  30     -- tile down
+kStateMarkDelete      =  40     -- mark delete
+kStateShowDelete      =  50     -- show delete
+kStateWaitCollapse    =  60     -- wait collapse
+kStateCollapse        =  70     -- collapse heap
+kStatePostCollapse    =  80     -- post collapse
+kStateFull            =  90     -- heap is full
+kStateEnd             = 100
+
+-- player comands
+
+kCommandLeft       = 10
+kCommandRight      = 20
+kCommandRotateL    = 30
+kCommandRotateR    = 35
+kCommandDown       = 40
+
+-- game object
+game = {
+   startTime   = sys("OS_ReadMonotonicTime"),
+   numPlayers  = 2,
+   scanTick    = {0,0},       -- current tick for kbd scan
+   downRate    = {},          -- current down rate
+   collapseRate= {kSlowCollapse,kSlowCollapse},
+   collapseC   = {0,0},       -- current collapse count
+   deleteC     = {0,0},       -- current delete count
+   penaltyRows = {0,0},       -- pending penalty for other player
+   penaltyTiles= {0,0},       -- pending single tile penalty
+   canvas      = {},
+   gameState   = {},
+   tile        = {},          -- current playing tile
+   tileNum     = {0,0},       -- num of generated tile
+   genTiles    = {},          -- generated tiles
+   timerStart  = {},          -- timer start
+   command     = {},          -- current command
+   delList     = {},          -- list of pieces to delete
+   moved       = {},          -- yes if falldown moved anything
+   cleanupList = {{},{}},     -- coordinates to clean up
+   keymapping = {
+      [1] = {
+         [69]   = kCommandLeft,
+         [86]   = kCommandRight,
+         [98]   = kCommandDown,
+         [37]   = kCommandRotateL,
+         [70]   = kCommandRotateR},
+      [2] = {
+         [122]  = kCommandLeft,
+         [26]   = kCommandRight,
+         [106]  = kCommandDown,
+         [42]   = kCommandRotateL,
+         [123]  = kCommandRotateR}
+    }
+}
+
+--------------------------- game state machine ----------------------------
+
+states = {}
+
+-- new tile
+states[kStateNewTile] = \(self,plr)
+  local otherPlr
+  --hio.gotoxy(0,0)
+  --print("c1: "..self.collapseC[1].." c2: "..self.collapseC[2].."  ")
+  if plr==1 then otherPlr=2 else otherPlr=1; end;
+  if self.collapseC[plr] > 1 then
+    if self.collapseC[plr] > self.penaltyRows[otherPlr] then
+      self.penaltyRows[otherPlr] = self.collapseC[plr]
+    end
+  end
+  if ((self.penaltyRows[otherPlr] == 0) and self.deleteC[plr]>kCriticalTiles) then
+    self.penaltyTiles[otherPlr] = self.deleteC[plr]-kCriticalTiles
+    if self.penaltyTiles[otherPlr]>kCanvasWidth then
+       self.penaltyTiles[otherPlr]=kCanvasWidth
+    end
+    -- hio.gotoxy(0,0); print(self.penaltyTiles[otherPlr])
+  end
+  self:dumpCanvas(plr)
+  -- hio.gotoxy(0,0); io.write(self.collapseC[plr])
+  self.collapseC[plr] = 0
+  self.deleteC[plr] = 0
+  self.tile[plr] = self:newTile(plr)
+  if (not self.tile[plr]) then
+    return kStateFull
+  end
+  self:drawTile(plr)
+  self.downRate[plr] = kSlowDown
+  self:plotPreview(plr)
+  return kStateTilePlayerMove
+end
+
+-- tile player move
+states[kStateTilePlayerMove] = \(self,plr)
+  if self:wait(plr,self.downRate[plr]) then
+    return kStateTileDown
+  else
+    self:playerMove(plr)
+    return kStateTilePlayerMove
+  end
+end
+
+-- tile down
+states[kStateTileDown] = \(self,plr)
+  if (self:tileDown(plr)) then
+    return kStateMarkDelete
+  else
+    return kStateTilePlayerMove
+  end
+end
+
+-- mark delete
+states[kStateMarkDelete] = \(self,plr)
+  self.delList[plr] = self:markDelete(plr)
+  if (#self.delList[plr]>0) then
+    self.collapseC[plr] += 1
+    self.deleteC[plr] += #self.delList[plr]
+    return kStateShowDelete
+  else
+    if (self.moved[plr]) then
+      return kStateCollapse
+    else
+      return kStatePostCollapse
+    end
+  end
+end
+
+-- show delete
+states[kStateShowDelete] = \(self,plr)
+  self:showDelete(plr)
+  return kStateWaitCollapse
+end
+
+-- wait collapse
+states[kStateWaitCollapse] = \(self,plr)
+  if self:wait(plr,25) then
+    self:doDelete(plr)
+    return kStateCollapse
+  else
+    return kStateWaitCollapse
+  end
+end
+
+-- do collapse
+states[kStateCollapse] = \(self,plr)
+  if self:wait(plr,self.collapseRate[plr]) then
+    self.moved[plr] = self:fallDown(plr)
+    if (self.moved[plr]) then
+      self:dumpCanvas(plr)
+      return kStateCollapse
+    else
+      return kStateMarkDelete
+    end
+  else
+    return kStateCollapse
+  end
+end
+
+-- post collapse
+states[kStatePostCollapse] = \(self,plr)
+  if self.penaltyRows[plr]>0 then
+    self:fillUpper(plr,self.penaltyRows[plr])
+    self.penaltyRows[plr]=0
+    self:dumpCanvas(plr)
+    self.collapseRate[plr] = kFastCollapse
+    return kStateCollapse
+  elseif self.penaltyTiles[plr]>0 then
+    local c
+    for c = 1,self.penaltyTiles[plr] do
+      local x
+      repeat
+        x = hio.random(1,kCanvasWidth)
+      until self.canvas[plr][x][1].val==0
+      self.canvas[plr][x][1].val=99
+      self.canvas[plr][x][1].dirty = true
+    end
+    self.penaltyTiles[plr] = 0
+    self:dumpCanvas(plr)
+    self.collapseRate[plr] = kFastCollapse
+    return kStateCollapse
+  end
+  self.collapseRate[plr] = kSlowCollapse
+  return kStateNewTile
+end
+
+-- full
+states[kStateFull] = \(self,plr)
+  if self:wait(plr,self.collapseRate[plr]) then
+    self.moved[plr] = self:fallDown(plr,true)
+    if (self.moved[plr]) then
+      self:dumpCanvas(plr)
+      return kStateFull
+    else
+      return kStateEnd
+    end
+  else
+    return kStateFull
+  end
+end
+
+-------------------------- utility functions ---------------------------
+
+wait = \()
+  sys(osbyte,19)
+end
+
+
+deepcopy = \(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deepcopy(orig_key)] = deepcopy(orig_value)
+        end
+        setmetatable(copy, deepcopy(getmetatable(orig)))
+    else -- number, string, boolean, etc
+        copy = orig
+    end
+    return copy
+end
+
+----------------------------- game functions -----------------------------
+
+function game:init()
+  local playerC, y, x
+  hio.mode(28)
+  hio.setCursor(false)
+  self.painter = spritePainter:new("KLuaPuyo:KPSprites")
+  self.fontWriter=SKWriter:new("Trinity.Medium.Italic",18,0xee880000)
+  for playerC = 1,2 do
+    self.command[playerC] = 0
+    self.canvas[playerC] = {}
+    self.tile[playerC] = {[1]={x=0,y=0,val=0},[2]={x=0,y=0,val=0}}
+    self.gameState[playerC] = kStateCollapse
+    for x = 1,kCanvasWidth do
+      self.canvas[playerC][x] = {}
+      for y = 1,kCanvasHeight do
+        self.canvas[playerC][x][y] =
+        {
+          val = 0,
+          neighborCount = 0,
+          dirty = true
+        }
+      end
+    end
+  end
+  self:generateTile(0)
+  hio.setRandSeed(self.startTime)
+end
+
+function game:stateLoop()
+  local i
+  local s  = self.gameState
+  repeat
+    for i=1, self.numPlayers do
+      self:scanKeys(i)
+      s[i] = states[s[i]](self,i)
+      if (self.command[i] == kCommandDown) then
+        self.downRate[i] = kFastDown
+        self.command[i] = 0
+      end
+    end
+  until ((s[1] == kStateEnd) or (s[2] == kStateEnd))
+end
+
+function game:scanKeys(plr)
+  local now = sys("OS_ReadMonotonicTime")
+  if (now-self.scanTick[plr])<kScanRate then
+    return
+  end
+  local _,res
+    for k,v in pairs(self.keymapping[plr]) do
+      _,res = sys("OS_Byte",121,k^^0x80)
+      if (res==255) then
+        self.command[plr] = v
+        self.scanTick[plr] = now
+      end
+  end
+end
+
+function game:wait(plr,ticks)
+  local current = sys("OS_ReadMonotonicTime")
+  if self.timerStart[plr] == nil then
+    self.timerStart[plr] = current
+    return false
+  end
+  if (current-self.timerStart[plr])>=ticks then
+    self.timerStart[plr] = nil
+    return true
+  end
+  return false
+end
+
+function game:showDelete(plr)
+  for k,v in ipairs(self.delList[plr]) do
+      self:plotCanvasTile(plr,v.x,v.y,"D")
+  end
+end
+
+function game:plotPreview(plr)
+  local num = self.tileNum[plr]
+  for x=1,2 do
+    local xp
+    if plr==1 then xp=x-1; else xp=kCanvasWidth-1+x; end
+    local tile = self.genTiles[num][x]
+    self:plotCanvasTile(plr,xp,-1,tile.val)
+  end
+end
+
+
+function game:drawTile(plr)
+  local i
+  local tile = self.tile[plr]
+  for k,v in ipairs(self.cleanupList[plr]) do
+    self:plotCanvasTile(plr,v.x,v.y,0)
+  end
+  for i=1,2 do
+    if (tile[i].val ~= 0) then
+      self:plotCanvasTile(plr,tile[i].x,tile[i].y,tile[i].val)
+    end
+  end
+  self.cleanupList[plr]={}
+end
+
+
+function game:tileDown(plr)
+  local i
+  local tile = self.tile[plr]
+  local x1,y1,x2,y2 = tile[1].x,tile[1].y,tile[2].x,tile[2].y
+  local numMoved = 0
+
+  local f = function(t1,t2)
+    return t1.y > t2.y
+  end
+
+  table.sort(tile,f)
+
+  for i=1,2 do
+      if (tile[i].val ~= 0) then
+        if (tile[i].y == kCanvasHeight) then
+         self.canvas[plr][tile[i].x][tile[i].y].val = tile[i].val
+         self.canvas[plr][tile[i].x][tile[i].y].dirty = true
+         tile[i].val = 0
+        else
+          if self.canvas[plr][tile[i].x][tile[i].y+1].val==0 then
+            table.insert(self.cleanupList[plr],{x=tile[i].x,y=tile[i].y})
+            tile[i].y += 1
+            numMoved += 1
+          else
+            self.canvas[plr][tile[i].x][tile[i].y].val = tile[i].val
+            self.canvas[plr][tile[i].x][tile[i].y].dirty = true
+            tile[i].val = 0
+          end
+        end
+      end
+  end
+  if (numMoved==0) then
+    return true
+  end
+  self:drawTile(plr)
+end
+
+function game:markCleanup(plr,coords)
+  table.insert(self.cleanupList[plr],{x=coords.x,y=coords.y})
+end
+
+function game:playerMove(plr)
+  if self.command[plr]==kCommandLeft or
+     self.command[plr]==kCommandRight then
+       self:leftRight(plr)
+  end
+  if self.command[plr]==kCommandRotateL then
+    self:rotate(plr,1)
+  end
+  if self.command[plr]==kCommandRotateR then
+    self:rotate(plr,-1)
+  end
+end
+
+function game:rotate(plr,dir)
+  local canvas = self.canvas[plr]
+  local tile = self.tile[plr]
+  local x1,x2 = tile[1].x, tile[2].x
+  local y1,y2 = tile[1].y, tile[2].y
+  if (x2>x1) then
+    x1 = x2
+    y1 = y1+dir
+  elseif (y1>y2) then
+    y2 = y1
+    x1 = x2+dir
+  elseif (x2<x1) then
+    x1 = x2
+    y1 = y2-dir
+  elseif (y1<y2) then
+    y1 = y2
+    x1 = x2-dir
+  end
+  if y1>kCanvasHeight or y2>kCanvasHeight or
+     x1>kCanvasWidth or x2>kCanvasWidth or
+     x1<1 or x2<1 or y1<1 or y2<1 then
+    return
+  end
+  local testval1 = canvas[x1][y1].val
+  local testval2 = canvas[x2][y2].val
+  if testval1 ~= 0 or testval2 ~= 0 then
+    return
+  end
+  self:markCleanup(plr,tile[1])
+  self:markCleanup(plr,tile[2])
+  tile[1].x = x1
+  tile[1].y = y1
+  tile[2].x = x2
+  tile[2].y = y2
+  self.command[plr]=0
+  self:drawTile(plr)
+end
+
+
+
+function game:leftRight(plr)
+  local canvas = self.canvas[plr]
+  local tile = self.tile[plr]
+  local x1,x2 = tile[1].x, tile[2].x
+  local y1,y2 = tile[1].y, tile[2].y
+  if self.command[plr]==kCommandLeft then
+    if (x1>1 and x2>1 and
+    canvas[x1-1][y1].val==0 and canvas[x2-1][y2].val==0) then
+      if tile[1].val ~= 0 then self:markCleanup(plr,tile[1]); end;
+      if tile[2].val ~= 0 then self:markCleanup(plr,tile[2]); end;
+      tile[1].x -=1
+      tile[2].x -=1
+    end
+    self.command[plr]=0
+  end
+  if self.command[plr]==kCommandRight then
+    if (x1<kCanvasWidth and x2<kCanvasWidth and
+    canvas[x1+1][y1].val==0 and canvas[x2+1][y2].val==0) then
+      if tile[1].val ~= 0 then self:markCleanup(plr,tile[1]); end;
+      if tile[2].val ~= 0 then self:markCleanup(plr,tile[2]); end;
+      tile[1].x += 1
+      tile[2].x += 1
+    end
+    self.command[plr]=0
+  end
+  self:drawTile(plr)
+end
+
+
+function game:generateTile(num)
+  -- print ("genTile "..num)
+  local x,y,newTile
+  x = kCanvasWidth/2
+  y = 1
+  newTile = {{x=x,y=y,val=hio.random(1,kNumColors)},
+                {x=x+1,y=y,val=hio.random(1,kNumColors)}}
+  self.genTiles[num] = newTile
+end
+
+function game:newTile(plr)
+  -- print ("newTile")
+  local returnTile
+  local newTileInstance = {}
+  local currentTileNum = self.tileNum[plr]
+  returnTile = self.genTiles[currentTileNum]
+  if (self.canvas[plr][returnTile[1].x][returnTile[2].y].val ~= 0 or
+      self.canvas[plr][returnTile[2].x][returnTile[2].y].val ~= 0) then
+      return nil
+  end
+  self.tileNum[plr] += 1
+  newTileInstance = deepcopy(returnTile)
+  if self.genTiles[currentTileNum+1]==nil then
+    self:generateTile(currentTileNum+1)
+  end
+  return newTileInstance
+end
+
+function game:checkValAtPos(x,y,val,plr)
+  if x<1 or x>kCanvasWidth or y<1 or y>kCanvasHeight then return false; end;
+  return (self.canvas[plr][x][y].val == val) or (self.canvas[plr][x][y].val==99)
+end
+
+function game:markDeleteRecursively(plr,x,y,delmap,result)
+  local idx = x+(kCanvasWidth*y)
+  if delmap[idx]~=nil then return; end
+  delmap[idx] = {x=x,y=y}
+  local val = self.canvas[plr][x][y].val
+  if val==99 then
+    return
+  end
+  result.count += 1
+  if self:checkValAtPos(x-1,y,val,plr) then
+    self:markDeleteRecursively(plr,x-1,y,delmap,result)
+  end
+  if self:checkValAtPos(x+1,y,val,plr) then
+    self:markDeleteRecursively(plr,x+1,y,delmap,result)
+  end
+  if self:checkValAtPos(x,y-1,val,plr) then
+    self:markDeleteRecursively(plr,x,y-1,delmap,result)
+  end
+  if self:checkValAtPos(x,y+1,val,plr) then
+    self:markDeleteRecursively(plr,x,y+1,delmap,result)
+  end
+end
+
+function game:markDelete(plr)
+  local delmap, result
+  local resultList = {}
+  for x = 1,kCanvasWidth do
+    for y = 1,kCanvasHeight do
+      local val = self.canvas[plr][x][y].val
+      if (val~=0 and val~=99 and self.canvas[plr][x][y].neighborCount==0) then
+        delmap = {}
+        result = { count=0 }
+        self:markDeleteRecursively(plr,x,y,delmap,result)
+        for k,v in pairs(delmap) do
+          self.canvas[plr][v.x][v.y].neighborCount = result.count
+          if (result.count>=kCriticalTiles) then
+            table.insert(resultList,v)
+          end
+        end
+      end
+    end
+  end
+  return resultList
+end
+
+function game:doDelete(plr)
+  for k,v in ipairs(self.delList[plr]) do
+    self.canvas[plr][v.x][v.y].val = 0
+    self.canvas[plr][v.x][v.y].dirty = true
+  end
+end
+
+function game:fallDown(plr,endgame)
+  endgame = endgame or false
+  assert(plr,"need player")
+  local moved = false
+  local movemap = {}
+  if (endgame==true) then
+    for x=1,kCanvasWidth do
+        self.canvas[plr][x][kCanvasHeight].val=0
+    end
+  end
+  for y = kCanvasHeight,2,-1 do
+    for x = 1,kCanvasWidth do
+      self.canvas[plr][x][y].neighborCount = 0
+      local fallingVal = self.canvas[plr][x][y-1].val
+      if ((endgame or (fallingVal ~= 0)) and
+          (self.canvas[plr][x][y].val==0)) then
+        self.canvas[plr][x][y].val = self.canvas[plr][x][y-1].val
+        self.canvas[plr][x][y-1].val = 0
+        self.canvas[plr][x][y].dirty = true
+        self.canvas[plr][x][y-1].dirty = true
+        if (fallingVal>0) then moved=true; end
+      end
+    end
+  end
+  return moved
+end
+
+function game:fillUpper(plr,num, pos)
+  num = num or 1
+  pos = pos or 50
+  assert(plr,"need player")
+  for y = 1, num do
+    for x = 1,kCanvasWidth do
+      if hio.random(0,100)<50 then
+        self.canvas[plr][x][y].val = 99
+        self.canvas[plr][x][y].dirty = true
+      end
+    end
+  end
+end
+
+
+function game:plotCanvasTile(plr,x,y,val)
+  local num,sx,sy
+  if (val==nil) then val = self.canvas[plr][x][y].val; end;
+  -- num = self.canvas[plr][x][y].neighborCount
+  sx = (x+kXOffset[plr])*32
+  sy = (kCanvasHeight-(y-kYOffset))*32
+  self.painter:plot(val,sx,sy,8)
+  --hio.gotoxy(x+kXOffset[plr],y+kYOffset)
+  --hio.setTextColour(val*2)
+  --hio.write(string.format("%x",num))
+end
+
+function game:dumpCanvas(plr)
+  assert(plr,"need player")
+  local num = 0
+  local y, x
+  for x = 1,kCanvasWidth do
+    for y = 1,kCanvasHeight do
+      if (self.canvas[plr][x][y].dirty==true) then
+        self:plotCanvasTile(plr,x,y)
+        num +=1
+        self.canvas[plr][x][y].dirty = false
+      end
+    end
+  end
+  -- hio.gotoxy(0,0); print("R"..num.."  ")
+end
+
+function game:drawWell(plr)
+  for y = 1,kCanvasHeight+1 do
+    self:plotCanvasTile(plr,0,y,"w")
+    self:plotCanvasTile(plr,kCanvasWidth+1,y,"w")
+  end
+  for x= 0,kCanvasWidth+1 do
+    self:plotCanvasTile(plr,x,kCanvasHeight+1,"w")
+  end
+end
+
+function game:plotTitle()
+  game.fontWriter:setFont("Trinity.Medium.Italic",15)
+  self.fontWriter:gotoxy(0,840)
+  self.fontWriter:center("KLuaPuyo")
+end
+
+local stopGame
+
+repeat
+  game:init()
+  local gmode = 0
+  sys("Hourglass_Smash")
+  game:plotTitle()
+  game.fontWriter:setFont("Trinity.Medium",8)
+  game.fontWriter:writeln()
+  game.fontWriter:center("2) players or p)ractice mode?")
+  repeat
+    gmode = hio.getc()
+    gmode = string.char(gmode)
+  until gmode=="2" or gmode=="p"
+  hio.cls(); game:plotTitle()
+
+  if (gmode=="2") then
+    game.numPlayers = 2
+  else
+    game.numPlayers = 1
+  end
+
+  game:drawWell(1)
+  game:drawWell(2)
+
+  hio.setTextColour(84)
+  hio.gotoxy(27,50); print("    [i]    ")
+  hio.gotoxy(27,51); print("[j] [k] [l]")
+  hio.gotoxy(27,52); print("  [space]  ")
+
+  if (game.numPlayers==2) then
+    hio.gotoxy(45,50); print("    [8]    ")
+    hio.gotoxy(45,51); print("[4] [5] [6]")
+    hio.gotoxy(45,52); print("  [  0  ]  ")
+  else
+    game:dumpCanvas(2)
+  end
+
+  ----------------
+  game:stateLoop()  -- the magic happens here
+  ----------------
+
+  hio.cls(); game:plotTitle()
+  hio.gotoxy(0,10)
+  hio.setTextColour(116)
+  hio.center(" -  G a m e   o v e r  - ")
+  print()
+  local again
+  hio.center("Play again? (y/n)")
+  repeat
+    again = string.char(hio.getc())
+  until (again=="y" or again=="n")
+  if (again=="y") then stopGame=false; else stopGame=true; end;
+until stopGame==true

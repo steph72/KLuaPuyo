@@ -1,0 +1,394 @@
+--
+-- HighIO v002 (hio.lua)
+--
+-- Written by Stephan Kleinert
+-- (c) 2014 Seven Mountains Software, all rights reserved.
+--
+-- a little hodgepodge with some i/o, some math,
+-- and some other missing things...
+--
+
+
+require "KLuaPuyo:vdu"
+-- unfortunately, vdu is no longer a part of
+-- RiscLua, so I had to resurrect it...
+
+local sys in riscos
+
+hio = {
+
+  -- random number seeds
+  m_z = 29061972,
+  m_w = 84777361,
+
+  -- colour constants
+  green = 8,
+  red   = 67,
+  blue  = 48,
+  periwinkleBlue = 52,
+  limeGreen = 78,
+  darkGreen = 88,
+  purple = 113,
+  white  = 127,
+  yellow = 15,
+  orange = 75,
+  brown = 70,
+  pink = 55,
+
+  -- screen properties
+  cWidth  = 80,
+  cHeight = 60,
+
+  textColour = 127
+
+}
+
+hio.setCursor = function(curs)
+   curs = curs or 0
+   vdu {23,1,curs,0,0,0,0,0,0,0} -- disable cursor
+end
+
+hio.write = function(arg)
+  io.write(arg)
+  io.flush()
+end
+
+-- getc
+-- get single character from keyboard
+hio.getc = function()
+  local c = sys("OS_ReadC")
+  return c
+end
+
+-- oneOf
+-- return one random item in a given list
+hio.oneOf = function(list)
+   local itemIndex = hio.random(1,#list)
+   return list[itemIndex]
+end
+
+-- getChoice
+-- return a single letter choice from a list of possible choices
+-- (numeric entries are treated as ascii codes. e.g.
+-- hio.getChoice({"a","b","c",13}) returns upon a,b,c or the return key)
+hio.getChoice = function(list)
+  local c
+  local stop = false
+  repeat
+    c = hio.getc()
+    for _,v in pairs(list) do
+      if ((type(v)=="string") and (c==string.byte(v))) then
+        stop = true
+      end
+      if ((type(v)=="number") and c==v) then
+        stop = true
+      end
+    end
+  until stop
+  return c
+end
+
+hio.runChoices = function(choiceFunctions,preflight)
+  local possibleChoiceTable = {}
+  for k,v in pairs(choiceFunctions) do
+    if (type(k)=="number") then
+      table.insert(possibleChoiceTable,k)
+    end
+    if (type(k)=="string") then
+      table.insert(possibleChoiceTable,string.byte(k))
+    end
+  end
+  local res = hio.getChoice(possibleChoiceTable)
+  if(preflight) then preflight(); end
+  if (res<32) then
+    choiceFunctions[res]()
+    return res
+  else
+    choiceFunctions[string.char(res)]()
+    return string.char(res)
+  end
+end
+
+
+
+-- line
+-- draw a line with a given char and a given width
+-- (defaults to 80 and "=")
+hio.line = function(char,width)
+  local theCharacter = char or "="
+  local theWidth = width or hio.cWidth
+  local i
+  for i=1,theWidth do
+    hio.write(theCharacter)
+  end
+  hio.write("\n")
+end
+
+-- center a string on the screen
+hio.center = function(centerString,startX,startY,winWidth,justifyFlag)
+  local len = string.len(centerString)
+  local midScreen = (startX or 0) + ((winWidth or hio.cWidth)/2)
+  local textStart = midScreen-(len/2)-1
+  local justify = justifyFlag or 1 -- 1/2/3 - center/left/right
+  local sx,sy
+
+  local _,x,y = sys("OS_Byte",134)
+  sx = startX or x
+  sy = startY or y
+
+  if (justify==1) then
+    textStart = midScreen-(len/2)-1
+  else
+    textStart = sx
+  end
+
+  vdu {31,textStart,sy}
+
+  print (centerString)
+end
+
+-- get cursor position
+hio.getpos = function()
+  local _,x,y = sys("OS_Byte",134) -- get text cursor position
+  return x,y
+end
+
+-- draw title
+hio.title = function(titleString,tJustify)
+  local justify = tJustify or 0
+  hio.line("=")
+  local _,x,y = sys("OS_Byte",134)
+  vdu {31,0,y}
+  hio.write("+")
+  vdu {31,hio.cWidth-1,y}
+  hio.write("+")
+  vdu {31,0,y}
+  if (justify==0) then
+    hio.center(titleString)
+  else
+    vdu{31,2,y}
+    print(titleString)
+  end
+  hio.line("=")
+end
+
+hio.titleS = function(titleString,tJustify)
+  local i
+  hio.title(titleString,tJustify)
+  for y=3,hio.cHeight-1 do
+    vdu {31,0,y}; hio.write("|")
+    vdu {31,hio.cWidth-1,y}; hio.write("|")
+  end
+end
+
+
+
+hio.choose = function(prompt, default, list)
+  local thePrompt      = prompt or ""
+  local defaultElement = list[default]
+  local defaultDesc    = defaultElement.description
+  hio.write(thePrompt)
+  local _,x,y = sys("OS_Byte",134) -- get text cursor position
+  hio.write(defaultDesc)
+  hio.write("\n\n")
+
+  for k,v in ipairs(list) do
+    print (k.."->"..v.description)
+  end
+  local _,_,y2 = sys("OS_Byte",134)
+  vdu {31,x,y}
+  local correctInput = false
+  local inputNumber = default
+  repeat
+    local firstKey=hio.getc()
+    if (firstKey>=49 and firstKey<59) then
+      correctInput=true
+      inputNumber = firstKey-48
+    end
+    if (firstKey==13) then
+      correctInput=true
+    end
+    if (inputNumber>#list) then
+      correctInput=false
+    end
+  until (correctInput==true)
+  vdu {31,x,y}
+  for k = 1,string.len(defaultDesc) do
+    hio.write(" ")
+  end
+  local newElement = list[inputNumber]
+  vdu {31,x,y}
+  hio.write(newElement.description)
+  for i = y+1,y2 do
+    vdu {31,0,i}
+    hio.line(" ")
+  end
+  vdu {31,x,y}
+  return newElement
+end
+
+hio.input = function(prompt, default)
+  local thePrompt  = prompt or ""
+  local theDefault = default or ""
+  local i
+  hio.write(thePrompt)
+  local _,x,y = sys("OS_Byte",134) -- get text cursor position
+  hio.write(theDefault)
+  vdu {31,x,y}
+  local firstKey=hio.getc()
+  if (firstKey==13) then
+    hio.write("\n")
+    return default
+  end
+  vdu {31,x,y}
+  for i=1,string.len(theDefault) do
+    hio.write(" ")
+  end
+  vdu {31,x,y}
+  sys ("OS_Byte",153,0,firstKey) -- insert byte into buffer
+  local inputKeys=io.read()
+  return inputKeys
+end
+
+hio.setRandSeed = function(n)
+  hio.m_w = n
+end
+
+hio.abs = function (n)
+  local ret = n
+  if (n<0) then ret=-n end
+  return ret
+end
+
+hio.mode = function(modeNum)
+  vdu {22, modeNum}
+end
+
+hio.initScreen = function(mode)
+   vdu {22, mode or 28}         -- mode 28: 80x60 characters, 256 colours
+   sys("OS_Byte",4,1)           -- enable cursor keys being read by OS_ReadC
+end
+
+hio.setTextColour = function(col)
+  vdu {17,col}
+  hio.textColour = col
+end
+
+hio.privateSetTextColour = function(col)
+  vdu {17,col}
+end
+
+hio.setGraphicsColour = function(col,gMod)
+  vdu {18,gMod or 0,col}
+end
+
+hio.gotoxy = function(x,y)
+  vdu {31,x,y}
+end
+
+hio.out = function(p1,p2,p3,p4)
+  local x,y,c,s
+  if (p4) then
+    x,y,c,s = p1, p2, p3, p4
+  else
+    x,y,s = p1,p2,p3
+  end
+  hio.gotoxy(x,y)
+  if (c) then vdu {17,c} ; end
+  hio.write(s)
+  if (c) then vdu {17,hio.textColour} ; end
+end
+
+hio.plotChar = function(x,y,c)
+    vdu {31,x,y,c}
+end
+
+hio.cls = function()
+  vdu {16}
+end
+
+hio.random = function(min, max)
+   if (min>=max) then
+      return min
+   else
+      hio.m_z = 36969 * (hio.m_z & 65535) + (hio.m_z >> 16)
+      hio.m_w = 18000 * (hio.m_w & 65535) + (hio.m_w >> 16)
+      local newNumber = (hio.m_z << 16) + hio.m_w
+      return (min+(newNumber%(max-min+1)))
+   end
+end
+
+
+hio.menu = function(x,y,title,list,preset,justify)
+  local maxlength = 0
+  local k,v,winLength
+  local currentChoice = preset or 1
+  local justify = justify or 1
+  xPos = x or 0
+  yPos = y or 0
+  for k,v in ipairs(list) do
+    local currentTitle = v
+    if (string.len(currentTitle)>maxlength) then
+      maxlength = string.len(currentTitle)
+    end
+  end
+  if string.len(title)>maxlength then
+    maxlength = string.len(title)
+  end
+  winLength = maxlength + 2
+  hio.gotoxy(xPos,yPos); hio.line("-",winLength)
+  hio.center(title,xPos+1,yPos+1,winLength,justify)
+  hio.gotoxy(xPos,yPos+2); hio.line("-",winLength)
+  hio.gotoxy(xPos,yPos); hio.write("+");
+  hio.gotoxy(xPos+winLength-1,yPos); hio.write("+")
+  hio.gotoxy(xPos,yPos+2); hio.write("+")
+  hio.gotoxy(xPos+winLength-1,yPos+2); hio.write("+")
+  hio.gotoxy(xPos,yPos+1); hio.write("|")
+  hio.gotoxy(xPos+winLength-1,yPos+1); hio.write("|")
+  for i = 1,#list do
+    hio.gotoxy(xPos,yPos+2+i); hio.write("|");
+    hio.gotoxy(xPos+winLength-1,yPos+2+i); hio.write("|");
+  end
+  hio.gotoxy(xPos,yPos+3+#list); hio.line("-",winLength)
+  local printChoices = function()
+    for k,v in ipairs(list) do
+      if (k==currentChoice) then
+        hio.setTextColour(hio.darkGreen+128)
+      else
+        hio.setTextColour(128)
+      end
+      hio.gotoxy(xPos+1,yPos+2+k)
+      for i = 1,winLength-2 do
+        hio.write(" ")
+      end
+      hio.center(v,xPos+1,yPos+2+k,winLength,justify)
+    end
+    hio.setTextColour(128)
+  end
+  local chKey
+  while (chKey~=13) do
+    printChoices()
+    chKey = hio.getc()
+    if (chKey==138) then currentChoice=currentChoice+1 end
+    if (chKey==139) then currentChoice=currentChoice-1 end
+    if (currentChoice>#list) then currentChoice=#list end
+    if (currentChoice<1) then currentChoice=1 end
+  end
+  return currentChoice
+end
+
+hio.classMenu = function(x,y,title,list,preset,justify)
+  local v
+  local entryList = {}
+  for _,v in ipairs(list) do
+    table.insert(entryList,v.rName or "???")
+  end
+  return hio.menu(x,y,title,entryList,preset,justify)
+end
+
+--hio.initScreen(28)
+-- hio.menu(5,5,"*123456789*",
+--        {"123456789","12345678","1234567","123456","12345","1234","123","12","1"},3,2)
+
+
+return hio
